@@ -1,6 +1,5 @@
 import os
 import re
-import json
 import requests
 import xlrd
 import resend
@@ -10,6 +9,72 @@ from datetime import datetime
 
 CACHE_FILE = Path(".cache/last_url.txt")
 KPZPN_URL = "https://kpzpn.pl"
+
+# Columns in XLS
+COL_KLASA   = 1
+COL_HOME    = 2
+COL_AWAY    = 3
+COL_DATE    = 4
+COL_TIME    = 5
+COL_REFEREE = 7
+COL_ASS1    = 8
+COL_ASS2    = 9
+
+
+def shorten_klasa(raw):
+    raw = raw.strip()
+
+    # Take part after " - "
+    if " - " in raw:
+        raw = raw.split(" - ", 1)[1].strip()
+
+    # Remove city prefix e.g. "Bydgoszcz: ", "Toruń: ", "Włocławek: "
+    raw = re.sub(r'^[^\s:]+:\s*', '', raw).strip()
+
+    # Remove (RW) suffix
+    raw = re.sub(r'\s*\(RW\)\s*$', '', raw).strip()
+
+    r = raw.lower()
+
+    # Senior leagues
+    if 'klasa okr' in r:
+        m = re.search(r'[Gg]rupa\s*(\d+)', raw)
+        return f"KO Gr.{m.group(1)}" if m else "KO"
+
+    if 'klasa a' in r:
+        m = re.search(r'[Gg]rupa\s*(\d+)', raw)
+        return f"A Gr.{m.group(1)}" if m else "A"
+
+    if 'klasa b' in r:
+        m = re.search(r'[Gg]rupa\s*(\d+)', raw)
+        return f"B Gr.{m.group(1)}" if m else "B"
+
+    if re.search(r'^iv liga$', r):
+        return "IV"
+
+    if 'trzecia liga kobiet' in r:
+        return "III K"
+
+    if 'czwarta liga kobiet' in r:
+        return "IV K"
+
+    # Youth leagues: "(I|II|III|IV) liga ... (A1|B2|C1|...) ..."
+    m_liga = re.search(r'^(I{1,3}V?|IV)\s+liga', raw, re.I)
+    m_cat  = re.search(r'\b([A-G]\d)\b', raw)
+    if m_liga and m_cat:
+        liga = m_liga.group(1).upper()
+        cat  = m_cat.group(1).upper()
+        m_gr = re.search(r'[Gg]rupa\s*(\d+)', raw)
+        return f"{liga} {cat} Gr.{m_gr.group(1)}" if m_gr else f"{liga} {cat}"
+
+    # Standalone category codes like "G1 Skrzat ...", "E1 Orlik ..."
+    m_cat2 = re.match(r'^([A-G]\d)\b', raw)
+    if m_cat2:
+        cat = m_cat2.group(1).upper()
+        m_gr = re.search(r'[Gg]rupa\s*(\d+)', raw)
+        return f"{cat} Gr.{m_gr.group(1)}" if m_gr else cat
+
+    return raw
 
 
 def get_xls_urls():
@@ -23,9 +88,9 @@ def get_xls_urls():
         if re.search(r"\.(xls|xlsx)$", href, re.IGNORECASE):
             if not href.startswith("http"):
                 href = KPZPN_URL + href
-            urls.append(href)
+            if href not in urls:
+                urls.append(href)
 
-    # sort by date embedded in URL path (YYYY/MM/...)
     urls.sort(reverse=True)
     return urls
 
@@ -48,57 +113,91 @@ def download_xls(url):
 
 
 def parse_xls_for_names(content, names):
-    book = xlrd.open_workbook(file_contents=content)
+    book = xlrd.open_workbook(file_contents=content, encoding_override="cp1250")
+    sheet = book.sheets()[0]
+
     matches = []
-    seen = set()
+    seen_rows = set()
 
-    for sheet in book.sheets():
-        for row_idx in range(sheet.nrows):
-            row_vals = []
-            for col in range(sheet.ncols):
-                cell = sheet.cell(row_idx, col)
-                val = str(cell.value).strip()
-                row_vals.append(val)
+    for row_idx in range(4, sheet.nrows):
+        def cell(c):
+            return str(sheet.cell_value(row_idx, c)).strip()
 
-            row_text = " ".join(row_vals)
+        referee = cell(COL_REFEREE)
+        ass1    = cell(COL_ASS1)
+        ass2    = cell(COL_ASS2)
+        all_ref = f"{referee} {ass1} {ass2}"
 
-            for name in names:
-                if name.lower() in row_text.lower():
-                    key = (row_idx, sheet.name)
-                    if key not in seen:
-                        seen.add(key)
-                        matches.append({
-                            "name": name,
-                            "row": row_vals,
-                            "sheet": sheet.name,
-                        })
-                    break
+        for name_idx, name in enumerate(names):
+            if name.lower() in all_ref.lower() and row_idx not in seen_rows:
+                seen_rows.add(row_idx)
 
+                raw_date = cell(COL_DATE)
+                try:
+                    date_obj = datetime.strptime(raw_date, "%Y-%m-%d")
+                    date_fmt = date_obj.strftime("%d.%m.%Y")
+                except ValueError:
+                    date_fmt = raw_date
+                    date_obj = datetime.max
+
+                assistants = [a for a in [ass1, ass2] if a and len(a) > 2 and any(c.isalpha() for c in a)]
+
+                matches.append({
+                    "name_idx":   name_idx,
+                    "name":       name,
+                    "klasa":      shorten_klasa(cell(COL_KLASA)),
+                    "home":       cell(COL_HOME),
+                    "away":       cell(COL_AWAY),
+                    "date_fmt":   date_fmt,
+                    "date_obj":   date_obj,
+                    "time":       cell(COL_TIME)[:5],
+                    "referee":    referee,
+                    "assistants": assistants,
+                })
+                break
+
+    matches.sort(key=lambda m: (m["name_idx"], m["date_obj"]))
     return matches
 
 
 def build_email_html(matches, xls_url):
     rows_html = ""
+    prev_name = None
+
     for m in matches:
-        cells = " &nbsp;|&nbsp; ".join(c for c in m["row"] if c)
+        if m["name"] != prev_name:
+            rows_html += (
+                f'<tr><td colspan="5" style="background:#1a1a2e;color:white;'
+                f'padding:8px 12px;font-weight:bold;font-size:15px">'
+                f'{m["name"]}</td></tr>\n'
+            )
+            prev_name = m["name"]
+
+        ass_str = "; ".join(m["assistants"]) if m["assistants"] else "—"
         rows_html += (
             f"<tr>"
-            f"<td style='padding:6px 12px;font-weight:bold'>{m['name']}</td>"
-            f"<td style='padding:6px 12px'>{cells}</td>"
+            f'<td style="padding:6px 10px;white-space:nowrap">{m["klasa"]}</td>'
+            f'<td style="padding:6px 10px">{m["home"]}</td>'
+            f'<td style="padding:6px 10px">{m["away"]}</td>'
+            f'<td style="padding:6px 10px;white-space:nowrap">{m["date_fmt"]} {m["time"]}</td>'
+            f'<td style="padding:6px 10px;color:#555">{ass_str}</td>'
             f"</tr>\n"
         )
 
     date_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     return f"""
-<div style="font-family:Arial,sans-serif;max-width:900px">
+<div style="font-family:Arial,sans-serif;max-width:960px">
   <h2 style="color:#1a1a2e">Nowa obsada sędziowska KPZPN</h2>
-  <p>Wykryto nowy plik obsady ({date_str}). Znaleziono <strong>{len(matches)}</strong> mecz(y):</p>
+  <p>Wykryto nowy plik obsady ({date_str}). Łącznie: <strong>{len(matches)}</strong> mecz(y).</p>
   <table border="1" cellspacing="0" cellpadding="0"
-         style="border-collapse:collapse;width:100%;border-color:#ddd">
+         style="border-collapse:collapse;width:100%;border-color:#ddd;font-size:14px">
     <thead>
-      <tr style="background:#1a1a2e;color:white">
-        <th style="padding:8px 12px;text-align:left">Nazwisko</th>
-        <th style="padding:8px 12px;text-align:left">Szczegóły</th>
+      <tr style="background:#f0f0f0">
+        <th style="padding:7px 10px;text-align:left">Liga</th>
+        <th style="padding:7px 10px;text-align:left">Gospodarze</th>
+        <th style="padding:7px 10px;text-align:left">Goście</th>
+        <th style="padding:7px 10px;text-align:left">Data / Godz.</th>
+        <th style="padding:7px 10px;text-align:left">Asystenci</th>
       </tr>
     </thead>
     <tbody>
@@ -112,7 +211,7 @@ def build_email_html(matches, xls_url):
 """
 
 
-def send_email(to_email, html, xls_url):
+def send_email(to_email, html):
     resend.api_key = os.environ["RESEND_API_KEY"]
     resend.Emails.send({
         "from": "Obsada KPZPN <onboarding@resend.dev>",
@@ -151,7 +250,7 @@ def main():
 
     if matches:
         html = build_email_html(matches, latest_url)
-        send_email(email, html, latest_url)
+        send_email(email, html)
         print(f"[scan] email sent to {email}")
     else:
         print("[scan] no matching names in new file, no email sent")
