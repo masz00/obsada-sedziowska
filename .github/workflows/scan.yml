@@ -37,7 +37,10 @@ jobs:
           SUBSCRIBER_EMAIL: ${{ secrets.SUBSCRIBER_EMAIL }}
           SUBSCRIBER_NAMES: ${{ secrets.SUBSCRIBER_NAMES }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-        run: python src/scan.py
+        run: |
+          echo "=== COMMIT: ${{ github.sha }} ==="
+          head -5 src/scan.py
+          python src/scan.py
 
       - name: Save cache
         uses: actions/cache/save@v4
