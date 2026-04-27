@@ -165,8 +165,9 @@ def parse_xls_for_names(content, names):
                     "date_fmt":   date_fmt,
                     "date_obj":   date_obj,
                     "time":       cell(COL_TIME)[:5],
-                    "referee":    referee,
-                    "assistants": assistants,
+                    "sg":  referee,
+                    "a1":  assistants[0] if len(assistants) > 0 else "—",
+                    "a2":  assistants[1] if len(assistants) > 1 else "—",
                 })
                 break
 
@@ -181,20 +182,21 @@ def build_email_html(matches, xls_url, names=None):
     for m in matches:
         if m["name"] != prev_name:
             rows_html += (
-                f'<tr><td colspan="5" style="background:#1a1a2e;color:white;'
+                f'<tr><td colspan="7" style="background:#1a1a2e;color:white;'
                 f'padding:8px 12px;font-weight:bold;font-size:15px">'
                 f'{m["name"]}</td></tr>\n'
             )
             prev_name = m["name"]
 
-        ass_str = "; ".join(m["assistants"]) if m["assistants"] else "—"
         rows_html += (
             f"<tr>"
             f'<td style="padding:6px 10px;white-space:nowrap">{m["klasa"]}</td>'
             f'<td style="padding:6px 10px">{m["home"]}</td>'
             f'<td style="padding:6px 10px">{m["away"]}</td>'
             f'<td style="padding:6px 10px;white-space:nowrap">{m["date_fmt"]} {m["time"]}</td>'
-            f'<td style="padding:6px 10px;color:#555">{ass_str}</td>'
+            f'<td style="padding:6px 10px">{m["sg"]}</td>'
+            f'<td style="padding:6px 10px;color:#555">{m["a1"]}</td>'
+            f'<td style="padding:6px 10px;color:#555">{m["a2"]}</td>'
             f"</tr>\n"
         )
 
@@ -219,7 +221,9 @@ def build_email_html(matches, xls_url, names=None):
         <th style="padding:7px 10px;text-align:left">Gospodarze</th>
         <th style="padding:7px 10px;text-align:left">Goście</th>
         <th style="padding:7px 10px;text-align:left">Data / Godz.</th>
-        <th style="padding:7px 10px;text-align:left">Asystenci</th>
+        <th style="padding:7px 10px;text-align:left">SG</th>
+        <th style="padding:7px 10px;text-align:left">A1</th>
+        <th style="padding:7px 10px;text-align:left">A2</th>
       </tr>
     </thead>
     <tbody>
