@@ -77,10 +77,15 @@ def shorten_klasa(raw):
     return raw
 
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
+
+
 def get_xls_urls():
     for attempt in range(3):
         try:
-            resp = requests.get(KPZPN_URL, timeout=60)
+            resp = requests.get(KPZPN_URL, timeout=60, headers=HEADERS)
             resp.raise_for_status()
             break
         except requests.exceptions.RequestException as e:
@@ -116,7 +121,7 @@ def save_url(url):
 
 
 def download_xls(url):
-    resp = requests.get(url, timeout=30)
+    resp = requests.get(url, timeout=60, headers=HEADERS)
     resp.raise_for_status()
     return resp.content
 
