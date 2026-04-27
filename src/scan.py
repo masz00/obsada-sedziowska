@@ -147,8 +147,9 @@ def parse_xls_for_names(content, names):
                 seen_rows.add(row_idx)
 
                 raw_date = cell(COL_DATE)
+                raw_time = cell(COL_TIME)[:5]
                 try:
-                    date_obj = datetime.strptime(raw_date, "%Y-%m-%d")
+                    date_obj = datetime.strptime(f"{raw_date} {raw_time}", "%Y-%m-%d %H:%M")
                     date_fmt = date_obj.strftime("%d.%m.%Y")
                 except ValueError:
                     date_fmt = raw_date
@@ -164,7 +165,7 @@ def parse_xls_for_names(content, names):
                     "away":       cell(COL_AWAY),
                     "date_fmt":   date_fmt,
                     "date_obj":   date_obj,
-                    "time":       cell(COL_TIME)[:5],
+                    "time":       raw_time,
                     "sg":  referee,
                     "a1":  assistants[0] if len(assistants) > 0 else "—",
                     "a2":  assistants[1] if len(assistants) > 1 else "—",
