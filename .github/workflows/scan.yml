@@ -34,8 +34,7 @@ jobs:
 
       - name: Run scanner
         env:
-          SUBSCRIBER_EMAIL: ${{ secrets.SUBSCRIBER_EMAIL }}
-          SUBSCRIBER_NAMES: ${{ secrets.SUBSCRIBER_NAMES }}
+          SUBSCRIBERS: ${{ secrets.SUBSCRIBERS }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           echo "=== COMMIT: ${{ github.sha }} ==="
