@@ -1,0 +1,47 @@
+name: Skanuj obsadę sędziowską
+
+on:
+  schedule:
+    # Czwartek 15:00-24:00 CEST = 13:00-22:00 UTC
+    - cron: "*/15 13-22 * * 4"
+    # Piątek 8:00-15:00 CEST = 6:00-13:00 UTC
+    - cron: "*/15 6-13 * * 5"
+  workflow_dispatch: # ręczne uruchomienie do testów
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore cache (last known XLS URL)
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: obsada-cache-${{ github.run_id }}
+          restore-keys: |
+            obsada-cache-
+
+      - name: Run scanner
+        env:
+          SUBSCRIBER_EMAIL: ${{ secrets.SUBSCRIBER_EMAIL }}
+          SUBSCRIBER_NAMES: ${{ secrets.SUBSCRIBER_NAMES }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: python src/scan.py
+
+      - name: Save cache
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .cache
+          key: obsada-cache-${{ github.run_id }}
