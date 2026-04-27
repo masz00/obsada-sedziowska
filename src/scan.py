@@ -240,7 +240,7 @@ def build_email_html(matches, xls_url, names=None):
 def send_email(to_email, html):
     resend.api_key = os.environ["RESEND_API_KEY"]
     resend.Emails.send({
-        "from": "Obsada KPZPN <onboarding@resend.dev>",
+        "from": "Obsada KPZPN <obsada@szymaniak.online>",
         "to": [to_email],
         "subject": "Nowa obsada sędziowska KPZPN",
         "html": html,
@@ -248,10 +248,8 @@ def send_email(to_email, html):
 
 
 def main():
-    names = [n.strip() for n in os.environ["SUBSCRIBER_NAMES"].split(",")]
-    email = os.environ["SUBSCRIBER_EMAIL"]
-
-    print(f"[scan] names={names}")
+    import json
+    subscribers = json.loads(os.environ["SUBSCRIBERS"])
 
     urls = get_xls_urls()
     print(f"[scan] found XLS urls: {urls}")
@@ -271,15 +269,20 @@ def main():
     print("[scan] new file! downloading...")
     content = download_xls(latest_url)
 
-    matches = parse_xls_for_names(content, names)
-    print(f"[scan] matches={len(matches)}")
+    for sub in subscribers:
+        email = sub["email"]
+        names = sub["names"]
+        print(f"[scan] checking for {email}: {names}")
 
-    if matches:
-        html = build_email_html(matches, latest_url, names)
-        send_email(email, html)
-        print(f"[scan] email sent to {email}")
-    else:
-        print("[scan] no matching names in new file, no email sent")
+        matches = parse_xls_for_names(content, names)
+        print(f"[scan] matches={len(matches)}")
+
+        if matches:
+            html = build_email_html(matches, latest_url, names)
+            send_email(email, html)
+            print(f"[scan] email sent to {email}")
+        else:
+            print(f"[scan] no matches for {email}, skipping")
 
     save_url(latest_url)
     print("[scan] cache updated")
