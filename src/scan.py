@@ -78,8 +78,17 @@ def shorten_klasa(raw):
 
 
 def get_xls_urls():
-    resp = requests.get(KPZPN_URL, timeout=30)
-    resp.raise_for_status()
+    for attempt in range(3):
+        try:
+            resp = requests.get(KPZPN_URL, timeout=60)
+            resp.raise_for_status()
+            break
+        except requests.exceptions.RequestException as e:
+            print(f"[scan] attempt {attempt+1}/3 failed: {e}")
+            if attempt == 2:
+                print("[scan] kpzpn.pl unreachable, skipping")
+                return []
+            import time; time.sleep(10)
     soup = BeautifulSoup(resp.text, "html.parser")
 
     urls = []
