@@ -160,7 +160,7 @@ def parse_xls_for_names(content, names):
     return matches
 
 
-def build_email_html(matches, xls_url):
+def build_email_html(matches, xls_url, names=None):
     rows_html = ""
     prev_name = None
 
@@ -184,11 +184,19 @@ def build_email_html(matches, xls_url):
             f"</tr>\n"
         )
 
+    found_names = sorted({m["name"] for m in matches}, key=lambda n: names.index(n) if names and n in names else 0)
+    not_found   = [n for n in (names or []) if n not in {m["name"] for m in matches}]
+
+    names_line = ", ".join(f"<strong>{n}</strong>" for n in found_names)
+    if not_found:
+        names_line += " &nbsp;|&nbsp; <span style='color:#999'>nie znaleziono: " + ", ".join(not_found) + "</span>"
+
     date_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     return f"""
 <div style="font-family:Arial,sans-serif;max-width:960px">
   <h2 style="color:#1a1a2e">Nowa obsada sędziowska KPZPN</h2>
   <p>Wykryto nowy plik obsady ({date_str}). Łącznie: <strong>{len(matches)}</strong> mecz(y).</p>
+  <p style="margin-bottom:12px">Skanowane nazwiska: {names_line}</p>
   <table border="1" cellspacing="0" cellpadding="0"
          style="border-collapse:collapse;width:100%;border-color:#ddd;font-size:14px">
     <thead>
@@ -249,7 +257,7 @@ def main():
     print(f"[scan] matches={len(matches)}")
 
     if matches:
-        html = build_email_html(matches, latest_url)
+        html = build_email_html(matches, latest_url, names)
         send_email(email, html)
         print(f"[scan] email sent to {email}")
     else:
