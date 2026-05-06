@@ -258,7 +258,7 @@ def build_email_html(matches, xls_url, me=None, friends=None):
                 f'<tr><td colspan="8" style="background:{bg};color:white;'
                 f'padding:8px 12px;font-weight:bold;font-size:15px">'
                 f'{m["name"]}{co_tag}'
-                f'<span style="font-weight:normal;font-size:13px"> &nbsp;&mdash;{fee_str}</span>'
+                f'<span style="font-weight:normal;font-size:13px"> &nbsp;{fee_str}</span>'
                 f'</td></tr>\n'
             )
             prev_name = m["name"]
@@ -292,7 +292,6 @@ def build_email_html(matches, xls_url, me=None, friends=None):
 
     return f"""
 <div style="font-family:Arial,sans-serif;max-width:960px">
-  <h2 style="color:#1a1a2e">Nowa obsada sędziowska KPZPN</h2>
   <p>Wykryto nowy plik obsady ({date_str}).</p>
   <p style="margin-bottom:12px">Skanowane nazwiska: {names_line}</p>
   <table border="1" cellspacing="0" cellpadding="0"
