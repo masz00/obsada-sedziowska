@@ -253,12 +253,12 @@ def build_email_html(matches, xls_url, me=None, friends=None):
             count   = name_count[m["name"]]
             fee_str = f" &nbsp;|&nbsp; {total} PLN netto" if total else ""
             bg      = "#1a2e1a" if m.get("is_co_ref") else "#1a1a2e"
-            co_tag  = " <span style='font-size:12px;font-weight:normal;opacity:0.75'>(co-referee)</span>" if m.get("is_co_ref") else ""
+            co_tag  = " <span style='font-size:12px;font-weight:normal;opacity:0.75'></span>" if m.get("is_co_ref") else ""
             rows_html += (
                 f'<tr><td colspan="8" style="background:{bg};color:white;'
                 f'padding:8px 12px;font-weight:bold;font-size:15px">'
                 f'{m["name"]}{co_tag}'
-                f'<span style="font-weight:normal;font-size:13px"> &nbsp;&mdash; {count} mecz(y){fee_str}</span>'
+                f'<span style="font-weight:normal;font-size:13px"> &nbsp;&mdash;{fee_str}</span>'
                 f'</td></tr>\n'
             )
             prev_name = m["name"]
@@ -293,7 +293,7 @@ def build_email_html(matches, xls_url, me=None, friends=None):
     return f"""
 <div style="font-family:Arial,sans-serif;max-width:960px">
   <h2 style="color:#1a1a2e">Nowa obsada sędziowska KPZPN</h2>
-  <p>Wykryto nowy plik obsady ({date_str}). Łącznie: <strong>{main_count}</strong> mecz(y).</p>
+  <p>Wykryto nowy plik obsady ({date_str}).</p>
   <p style="margin-bottom:12px">Skanowane nazwiska: {names_line}</p>
   <table border="1" cellspacing="0" cellpadding="0"
          style="border-collapse:collapse;width:100%;border-color:#ddd;font-size:14px">
