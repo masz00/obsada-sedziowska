@@ -7,8 +7,17 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 from datetime import datetime
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 CACHE_FILE = Path(".cache/last_url.txt")
 KPZPN_URL = "https://kpzpn.pl"
+
+# E/F/G = youth/amateur categories — excluded everywhere
+_YOUTH_RE = re.compile(r'\b[E-G]\d\b')
 
 COL_KLASA   = 1
 COL_HOME    = 2
@@ -138,6 +147,7 @@ def save_url(url):
     CACHE_FILE.write_text(url)
 
 
+
 def download_xls(url):
     resp = requests.get(url, timeout=60, headers=HEADERS)
     resp.raise_for_status()
@@ -149,7 +159,6 @@ def _parse_rows(content, names, name_offset=0):
     book = xlrd.open_workbook(file_contents=content, encoding_override="cp1250")
     sheet = book.sheets()[0]
     matches = []
-    seen_rows = set()
 
     for row_idx in range(4, sheet.nrows):
         def cell(c, ri=row_idx):
@@ -161,9 +170,124 @@ def _parse_rows(content, names, name_offset=0):
         all_ref = f"{referee} {ass1} {ass2}"
 
         for name_idx, name in enumerate(names):
-            if name.lower() in all_ref.lower() and row_idx not in seen_rows:
-                seen_rows.add(row_idx)
+            if name.lower() not in all_ref.lower():
+                continue
 
+            raw_date = cell(COL_DATE)
+            raw_time = cell(COL_TIME)[:5]
+            try:
+                date_obj = datetime.strptime(f"{raw_date} {raw_time}", "%Y-%m-%d %H:%M")
+                date_fmt = date_obj.strftime("%d.%m.%Y")
+            except ValueError:
+                date_fmt = raw_date
+                date_obj = datetime.max
+
+            klasa      = shorten_klasa(cell(COL_KLASA))
+            if _YOUTH_RE.search(klasa):
+                continue
+
+            assistants = [a for a in [ass1, ass2] if a and len(a) > 2 and any(c.isalpha() for c in a)]
+
+            n = name.lower()
+            if n in referee.lower():
+                role = "one" if klasa.startswith("B") and len(assistants) == 0 else "sg"
+            elif n in ass1.lower() or n in ass2.lower():
+                role = "a"
+            else:
+                role = None
+
+            matches.append({
+                "name_idx":  name_offset + name_idx,
+                "name":      name,
+                "klasa":     klasa,
+                "home":      cell(COL_HOME),
+                "away":      cell(COL_AWAY),
+                "date_fmt":  date_fmt,
+                "date_obj":  date_obj,
+                "time":      raw_time,
+                "sg":        referee,
+                "a1":        assistants[0] if len(assistants) > 0 else "—",
+                "a2":        assistants[1] if len(assistants) > 1 else "—",
+                "role":      role,
+                "fee":       get_fee(klasa, role) if role else None,
+                "is_co_ref": False,
+            })
+
+    matches.sort(key=lambda m: (m["name_idx"], m["date_obj"]))
+    return matches
+
+
+def _find_by_league(content, leagues):
+    """Return all rows where shortened klasa matches any of the given league strings."""
+    if not leagues:
+        return []
+    book = xlrd.open_workbook(file_contents=content, encoding_override="cp1250")
+    sheet = book.sheets()[0]
+    matches = []
+    for row_idx in range(4, sheet.nrows):
+        def cell(c, ri=row_idx):
+            try:
+                return str(sheet.cell_value(ri, c)).strip()
+            except IndexError:
+                return ""
+        klasa = shorten_klasa(cell(COL_KLASA))
+        if _YOUTH_RE.search(klasa):
+            continue
+        for league in leagues:
+            if klasa.lower() != league.lower():
+                continue
+            raw_date = cell(COL_DATE)
+            raw_time = cell(COL_TIME)[:5]
+            try:
+                date_obj = datetime.strptime(f"{raw_date} {raw_time}", "%Y-%m-%d %H:%M")
+                date_fmt = date_obj.strftime("%d.%m.%Y")
+            except ValueError:
+                date_fmt = raw_date
+                date_obj = datetime.max
+            referee = cell(COL_REFEREE)
+            ass1    = cell(COL_ASS1)
+            ass2    = cell(COL_ASS2)
+            assistants = [a for a in [ass1, ass2] if a and len(a) > 2 and any(c.isalpha() for c in a)]
+            matches.append({
+                "group":    league,
+                "klasa":    klasa,
+                "home":     cell(COL_HOME),
+                "away":     cell(COL_AWAY),
+                "date_fmt": date_fmt,
+                "date_obj": date_obj,
+                "time":     raw_time,
+                "sg":       referee,
+                "a1":       assistants[0] if len(assistants) > 0 else "—",
+                "a2":       assistants[1] if len(assistants) > 1 else "—",
+            })
+            break
+    matches.sort(key=lambda m: (m["group"], m["date_obj"]))
+    return matches
+
+
+def _find_by_team(content, teams):
+    """Return all rows where home or away team contains any of the given team strings."""
+    if not teams:
+        return []
+    book = xlrd.open_workbook(file_contents=content, encoding_override="cp1250")
+    sheet = book.sheets()[0]
+    matches = []
+    seen = set()
+    for row_idx in range(4, sheet.nrows):
+        def cell(c, ri=row_idx):
+            try:
+                return str(sheet.cell_value(ri, c)).strip()
+            except IndexError:
+                return ""
+        home = cell(COL_HOME)
+        away = cell(COL_AWAY)
+        klasa_t = shorten_klasa(cell(COL_KLASA))
+        if _YOUTH_RE.search(klasa_t):
+            continue
+        for team in teams:
+            tl = team.lower()
+            if (tl in home.lower() or tl in away.lower()) and (row_idx, team) not in seen:
+                seen.add((row_idx, team))
                 raw_date = cell(COL_DATE)
                 raw_time = cell(COL_TIME)[:5]
                 try:
@@ -172,37 +296,24 @@ def _parse_rows(content, names, name_offset=0):
                 except ValueError:
                     date_fmt = raw_date
                     date_obj = datetime.max
-
-                klasa      = shorten_klasa(cell(COL_KLASA))
+                referee = cell(COL_REFEREE)
+                ass1    = cell(COL_ASS1)
+                ass2    = cell(COL_ASS2)
                 assistants = [a for a in [ass1, ass2] if a and len(a) > 2 and any(c.isalpha() for c in a)]
-
-                n = name.lower()
-                if n in referee.lower():
-                    role = "one" if klasa.startswith("B") and len(assistants) == 0 else "sg"
-                elif n in ass1.lower() or n in ass2.lower():
-                    role = "a"
-                else:
-                    role = None
-
+                klasa = shorten_klasa(cell(COL_KLASA))
                 matches.append({
-                    "name_idx":  name_offset + name_idx,
-                    "name":      name,
-                    "klasa":     klasa,
-                    "home":      cell(COL_HOME),
-                    "away":      cell(COL_AWAY),
-                    "date_fmt":  date_fmt,
-                    "date_obj":  date_obj,
-                    "time":      raw_time,
-                    "sg":        referee,
-                    "a1":        assistants[0] if len(assistants) > 0 else "—",
-                    "a2":        assistants[1] if len(assistants) > 1 else "—",
-                    "role":      role,
-                    "fee":       get_fee(klasa, role) if role else None,
-                    "is_co_ref": False,
+                    "group":    team,
+                    "klasa":    klasa,
+                    "home":     home,
+                    "away":     away,
+                    "date_fmt": date_fmt,
+                    "date_obj": date_obj,
+                    "time":     raw_time,
+                    "sg":       referee,
+                    "a1":       assistants[0] if len(assistants) > 0 else "—",
+                    "a2":       assistants[1] if len(assistants) > 1 else "—",
                 })
-                break
-
-    matches.sort(key=lambda m: (m["name_idx"], m["date_obj"]))
+    matches.sort(key=lambda m: (m["group"], m["date_obj"]))
     return matches
 
 
@@ -225,16 +336,70 @@ def parse_xls_for_subscriber(content, me, friends, include_co_refs):
         ])
 
         if new_co_refs:
+            my_keys = {(m["home"], m["away"], m["date_fmt"], m["time"]) for m in my_matches}
             co_matches = _parse_rows(content, new_co_refs, name_offset=len(names))
             for m in co_matches:
                 m["is_co_ref"] = True
+            co_matches = [m for m in co_matches
+                          if (m["home"], m["away"], m["date_fmt"], m["time"]) not in my_keys]
             matches.extend(co_matches)
             matches.sort(key=lambda m: (m["name_idx"], m["date_obj"]))
 
     return matches
 
 
-def build_email_html(matches, xls_url, me=None, friends=None):
+def _build_watch_section(items, title):
+    """HTML section for league or team watch rows (no fee column)."""
+    if not items:
+        return ""
+    rows = ""
+    prev_group = None
+    for m in items:
+        if m["group"] != prev_group:
+            count = sum(1 for x in items if x["group"] == m["group"])
+            rows += (
+                f'<tr><td colspan="7" style="background:#2e1a1a;color:white;'
+                f'padding:8px 12px;font-weight:bold;font-size:15px">'
+                f'{m["group"]}'
+                f'<span style="font-weight:normal;font-size:13px"> &nbsp;&mdash; {count} mecz(y)</span>'
+                f'</td></tr>\n'
+            )
+            prev_group = m["group"]
+        rows += (
+            f"<tr>"
+            f'<td style="padding:6px 10px;white-space:nowrap">{m["klasa"]}</td>'
+            f'<td style="padding:6px 10px">{m["home"]}</td>'
+            f'<td style="padding:6px 10px">{m["away"]}</td>'
+            f'<td style="padding:6px 10px;white-space:nowrap">{m["date_fmt"]} {m["time"]}</td>'
+            f'<td style="padding:6px 10px">{m["sg"]}</td>'
+            f'<td style="padding:6px 10px;color:#555">{m["a1"]}</td>'
+            f'<td style="padding:6px 10px;color:#555">{m["a2"]}</td>'
+            f"</tr>\n"
+        )
+    return f"""
+  <h3 style="color:#1a1a2e;margin-top:28px">{title}</h3>
+  <table border="1" cellspacing="0" cellpadding="0"
+         style="border-collapse:collapse;width:100%;border-color:#ddd;font-size:14px">
+    <thead>
+      <tr style="background:#f0f0f0">
+        <th style="padding:7px 10px;text-align:left">Liga</th>
+        <th style="padding:7px 10px;text-align:left">Gospodarze</th>
+        <th style="padding:7px 10px;text-align:left">Goście</th>
+        <th style="padding:7px 10px;text-align:left">Data / Godz.</th>
+        <th style="padding:7px 10px;text-align:left">SG</th>
+        <th style="padding:7px 10px;text-align:left">A1</th>
+        <th style="padding:7px 10px;text-align:left">A2</th>
+      </tr>
+    </thead>
+    <tbody>
+      {rows}
+    </tbody>
+  </table>
+"""
+
+
+def build_email_html(matches, xls_url, me=None, friends=None,
+                     league_matches=None, team_matches=None):
     all_names = ([me] if me else []) + list(friends or [])
 
     name_fee_total = {}
@@ -290,6 +455,9 @@ def build_email_html(matches, xls_url, me=None, friends=None):
     date_str   = datetime.now().strftime("%d.%m.%Y %H:%M")
     main_count = len([m for m in matches if not m.get("is_co_ref")])
 
+    league_section = _build_watch_section(league_matches or [], "Obserwowane ligi")
+    team_section   = _build_watch_section(team_matches or [], "Obserwowane drużyny")
+
     return f"""
 <div style="font-family:Arial,sans-serif;max-width:960px">
   <h2 style="color:#1a1a2e">Nowa obsada sędziowska KPZPN</h2>
@@ -313,6 +481,8 @@ def build_email_html(matches, xls_url, me=None, friends=None):
       {rows_html}
     </tbody>
   </table>
+  {league_section}
+  {team_section}
   <p style="margin-top:20px">
     <a href="{xls_url}" style="color:#0066cc">Pobierz pełną obsadę (XLS)</a>
   </p>
@@ -324,7 +494,7 @@ def send_email(to_email, html):
     resend.api_key = os.environ["RESEND_API_KEY"]
     resend.Emails.send({
         "from": "Obsada KPZPN <obsada@szymaniak.online>",
-        "reply_to": ["maciej.szymaniak0@gmail.com"],
+        "reply_to": [os.environ.get("REPLY_TO_EMAIL", "")],
         "to": [to_email],
         "subject": "Nowa obsada sędziowska KPZPN",
         "html": html,
@@ -346,12 +516,28 @@ def main():
     last_url = get_last_url()
     print(f"[scan] latest={latest_url}  last_known={last_url}")
 
-    if latest_url == last_url:
+    dry_run = os.environ.get("DRY_RUN", "").lower() in ("1", "true", "yes")
+    if dry_run:
+        print("[scan] *** DRY RUN — emails will NOT be sent ***")
+
+    if latest_url == last_url and not dry_run:
         print("[scan] no new file, done")
         return
+    if latest_url == last_url:
+        print("[scan] no new file, but DRY_RUN — proceeding anyway")
 
-    print("[scan] new file! downloading...")
+    print("[scan] downloading...")
     content = download_xls(latest_url)
+
+    if dry_run:
+        book = xlrd.open_workbook(file_contents=content, encoding_override="cp1250")
+        sheet = book.sheets()[0]
+        all_klasy = sorted({
+            k for r in range(4, sheet.nrows)
+            if (k := shorten_klasa(str(sheet.cell_value(r, COL_KLASA)).strip()))
+            and not _YOUTH_RE.search(k)
+        })
+        print(f"[scan] all leagues in XLS ({len(all_klasy)}): {all_klasy}")
 
     for sub in subscribers:
         if sub.get("disabled"):
@@ -362,21 +548,34 @@ def main():
         me              = sub.get("me")
         friends         = sub.get("friends", [])
         include_co_refs = sub.get("include_co_refs", False)
+        leagues         = sub.get("leagues", [])
+        teams           = sub.get("teams", [])
 
-        print(f"[scan] checking for {email}: me={me}, friends={friends}, include_co_refs={include_co_refs}")
+        print(f"[scan] checking for {email}: me={me}, friends={friends}, leagues={leagues}, teams={teams}")
 
-        matches = parse_xls_for_subscriber(content, me, friends, include_co_refs)
-        print(f"[scan] matches={len(matches)}")
+        matches        = parse_xls_for_subscriber(content, me, friends, include_co_refs)
+        league_matches = _find_by_league(content, leagues)
+        team_matches   = _find_by_team(content, teams)
+        print(f"[scan] ref={len(matches)} league={len(league_matches)} team={len(team_matches)}")
 
-        if matches:
-            html = build_email_html(matches, latest_url, me=me, friends=friends)
-            send_email(email, html)
-            print(f"[scan] email sent to {email}")
+        if matches or league_matches or team_matches:
+            html = build_email_html(
+                matches, latest_url, me=me, friends=friends,
+                league_matches=league_matches, team_matches=team_matches,
+            )
+            if dry_run:
+                print(f"[scan] DRY RUN — would send email to {email}")
+            else:
+                send_email(email, html)
+                print(f"[scan] email sent to {email}")
         else:
             print(f"[scan] no matches for {email}, skipping")
 
-    save_url(latest_url)
-    print("[scan] cache updated")
+    if not dry_run:
+        save_url(latest_url)
+        print("[scan] cache updated")
+    else:
+        print("[scan] DRY RUN — cache not updated")
 
 
 if __name__ == "__main__":
