@@ -1,4 +1,4 @@
-# Obsada Sędziowska KPZPN – Skaner
+# Obsada Sędziowska KPZPN – Skaner XLSX
 
 [![Tests](https://github.com/masz00/obsada-sedziowska/actions/workflows/tests.yml/badge.svg)](https://github.com/masz00/obsada-sedziowska/actions/workflows/tests.yml)
 
