@@ -1,4 +1,4 @@
-# Obsada Sędziowska KPZPN – Skaner
+# Obsada Sędziowska KPZPN – Skaner XLSX
 
 Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki czy pojawił się nowy plik XLS z obsadą — jeśli tak, wysyła email z tabelą meczów, rolą i stawką netto.
 
