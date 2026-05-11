@@ -1,14 +1,13 @@
 # Obsada Sędziowska KPZPN – Skaner
 
-Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza co 15 minut w czwartki (15:00–24:00 CEST) i piątki (8:00–15:00 CEST) czy pojawił się nowy plik XLS z obsadą. Jeśli tak – filtruje mecze po nazwiskach i wysyła spersonalizowany email do każdego subskrybenta.
+Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki czy pojawił się nowy plik XLS z obsadą — jeśli tak, wysyła email z tabelą meczów, rolą i stawką netto.
 
 ## Jak działa
 
 1. GitHub Actions (cron) scrape'uje kpzpn.pl w poszukiwaniu nowego pliku XLS
-2. Porównuje URL z poprzednim skanem (cache)
-3. Jeśli nowy plik – parsuje Excel i filtruje mecze po nazwiskach
-4. Wysyła email przez Resend z tabelą: Liga | Gospodarze | Goście | Data | SG | A1 | A2
-5. Każdy subskrybent dostaje tylko swoje mecze
+2. Porównuje URL z poprzednim skanem (cache) — jeśli ten sam, kończy
+3. Parsuje Excel i dla każdego subskrybenta szuka meczów po nazwiskach, ligach i drużynach
+4. Wysyła email przez Resend z tabelą meczów i stawkami netto (wg ekwiwalentu KPZPN 2024/2025)
 
 ## Stack
 
@@ -30,32 +29,79 @@ Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza co 15 minut w czwartki 
 
 **Settings → Secrets and variables → Actions → New repository secret**
 
-| Secret | Opis |
-|--------|------|
-| `RESEND_API_KEY` | Klucz API z Resend |
-| `SUBSCRIBERS` | JSON z listą subskrybentów (patrz niżej) |
+| Secret           | Opis                                     |
+| ---------------- | ---------------------------------------- |
+| `RESEND_API_KEY` | Klucz API z Resend                       |
+| `REPLY_TO_EMAIL` | Adres reply-to w wysyłanych emailach     |
+| `SUBSCRIBERS`    | JSON z listą subskrybentów (patrz niżej) |
 
-Format `SUBSCRIBERS` (jedna linia):
+### 4. Format `SUBSCRIBERS`
+
 ```json
-[{"email":"jan@example.com","names":["Kowalski","Nowak"]},{"email":"anna@example.com","names":["Wiśniewska"]}]
+[
+  {
+    "email": "jan@example.com",
+    "me": "Kowalski",
+    "friends": ["Nowak", "Wiśniewska"],
+    "include_co_refs": true,
+    "leagues": ["IV", "KO Gr.1"],
+    "teams": ["Zawisza Bydgoszcz"]
+  },
+  {
+    "email": "anna@example.com",
+    "me": "Wiśniewska",
+    "friends": ["Kowalski"],
+    "include_co_refs": false,
+    "disabled": true
+  }
+]
 ```
 
-### 4. Zmień domenę nadawcy
+| Pole              | Opis                                                                        |
+| ----------------- | --------------------------------------------------------------------------- |
+| `email`           | Adres odbiorcy                                                              |
+| `me`              | Twoje nazwisko — Twoje mecze wyświetlane jako pierwsze                      |
+| `friends`         | Pozostałe nazwiska do skanowania                                            |
+| `include_co_refs` | `true` = dorzuca mecze co-sędziów jadących z Tobą w tym tygodniu           |
+| `leagues`         | Lista lig do obserwowania — wszystkie mecze z danej ligi (np. `"IV"`, `"KO Gr.1"`, `"B Gr.5"`) |
+| `teams`           | Lista drużyn do obserwowania — mecze jako gospodarz lub gość (np. `"Zawisza Bydgoszcz"`) |
+| `disabled`        | `true` = pomija subskrybenta                                                |
+
+Ligi E/F/G (młodzieżowe) są automatycznie pomijane we wszystkich sekcjach.
+
+Dokładne nazwy lig znajdziesz uruchamiając dry run (patrz niżej) — w logu pojawi się pełna lista lig z aktualnego XLS.
+
+### 5. Zmień domenę nadawcy
 
 W `src/scan.py` zmień:
+
 ```python
 "from": "Obsada KPZPN <obsada@twoja-domena.pl>",
 ```
 
-### 5. Test ręczny
+### 6. Lokalnie (opcjonalnie)
 
-**Actions → Skanuj obsadę sędziowską → Run workflow**
+```bash
+pip install -r requirements-dev.txt
+cp .env.example .env   # uzupełnij kluczami
+python src/scan.py
+```
+
+Dry run (bez wysyłki emaila):
+
+```bash
+DRY_RUN=1 python src/scan.py
+```
+
+### 7. Test na GitHub Actions
+
+**Actions → dry run → Run workflow** — uruchamia skaner bez wysyłania emaili, pokazuje logi z listą lig i znalezionych meczów.
 
 ## Harmonogram
 
-| Dzień | Godziny (CEST) |
-|-------|---------------|
-| Czwartek | 15:00 – 24:00 |
-| Piątek | 08:00 – 15:00 |
+| Dzień    | Godziny (CEST) |
+| -------- | -------------- |
+| Czwartek | 15:00 – 23:00  |
+| Piątek   | 10:00 – 16:00  |
 
-Skanowanie co 15 minut w tych oknach czasowych.
+Skanowanie co 15 minut.
