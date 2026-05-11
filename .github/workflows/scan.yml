@@ -22,7 +22,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Restore cache (last known XLS URL)
         uses: actions/cache@v4
@@ -32,13 +32,16 @@ jobs:
           restore-keys: |
             obsada-cache-
 
+      - name: Run tests
+        run: python -m pytest tests/ -q
+
       - name: Run scanner
         env:
           SUBSCRIBERS: ${{ secrets.SUBSCRIBERS }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          REPLY_TO_EMAIL: ${{ secrets.REPLY_TO_EMAIL }}
         run: |
           echo "=== COMMIT: ${{ github.sha }} ==="
-          head -5 src/scan.py
           python src/scan.py
 
       - name: Save cache

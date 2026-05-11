@@ -1,15 +1,13 @@
 # Obsada Sędziowska KPZPN – Skaner XLSX
 
-Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki czy pojawił się nowy plik XLS z obsadą jeśli tak, wysyła email z tabelą meczów, rolą i stawką netto dla każdego sędziego z listy.
+Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki czy pojawił się nowy plik XLS z obsadą — jeśli tak, wysyła email z tabelą meczów, rolą i stawką netto.
 
 ## Jak działa
 
 1. GitHub Actions (cron) scrape'uje kpzpn.pl w poszukiwaniu nowego pliku XLS
 2. Porównuje URL z poprzednim skanem (cache) — jeśli ten sam, kończy
-3. Sprawdza czy w tym tygodniu już wysłano — jeśli tak, kończy
-4. Parsuje Excel i filtruje mecze po nazwiskach z listy każdego subskrybenta
-5. Opcjonalnie dorzuca mecze sędziów jadących razem z subskrybentem (`include_co_refs`)
-6. Wysyła email przez Resend z tabelą meczów i stawkami netto (wg ekwiwalentu KPZPN 2024/2025)
+3. Parsuje Excel i dla każdego subskrybenta szuka meczów po nazwiskach, ligach i drużynach
+4. Wysyła email przez Resend z tabelą meczów i stawkami netto (wg ekwiwalentu KPZPN 2024/2025)
 
 ## Stack
 
@@ -34,6 +32,7 @@ Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki cz
 | Secret           | Opis                                     |
 | ---------------- | ---------------------------------------- |
 | `RESEND_API_KEY` | Klucz API z Resend                       |
+| `REPLY_TO_EMAIL` | Adres reply-to w wysyłanych emailach     |
 | `SUBSCRIBERS`    | JSON z listą subskrybentów (patrz niżej) |
 
 ### 4. Format `SUBSCRIBERS`
@@ -44,7 +43,9 @@ Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki cz
     "email": "jan@example.com",
     "me": "Kowalski",
     "friends": ["Nowak", "Wiśniewska"],
-    "include_co_refs": true
+    "include_co_refs": true,
+    "leagues": ["IV", "KO Gr.1"],
+    "teams": ["Zawisza Bydgoszcz"]
   },
   {
     "email": "anna@example.com",
@@ -56,13 +57,19 @@ Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki cz
 ]
 ```
 
-| Pole              | Opis                                                               |
-| ----------------- | ------------------------------------------------------------------ |
-| `email`           | Adres odbiorcy                                                     |
-| `me`              | Twoje nazwisko — Twoje mecze wyświetlane jako pierwsze             |
-| `friends`         | Pozostałe nazwiska do skanowania                                   |
-| `include_co_refs` | `true` = dorzuca mecze co-sędziów jadących z Tobą w danym tygodniu |
-| `disabled`        | `true` = pomija subskrybenta (przydatne przy testach)              |
+| Pole              | Opis                                                                        |
+| ----------------- | --------------------------------------------------------------------------- |
+| `email`           | Adres odbiorcy                                                              |
+| `me`              | Twoje nazwisko — Twoje mecze wyświetlane jako pierwsze                      |
+| `friends`         | Pozostałe nazwiska do skanowania                                            |
+| `include_co_refs` | `true` = dorzuca mecze co-sędziów jadących z Tobą w tym tygodniu           |
+| `leagues`         | Lista lig do obserwowania — wszystkie mecze z danej ligi (np. `"IV"`, `"KO Gr.1"`, `"B Gr.5"`) |
+| `teams`           | Lista drużyn do obserwowania — mecze jako gospodarz lub gość (np. `"Zawisza Bydgoszcz"`) |
+| `disabled`        | `true` = pomija subskrybenta                                                |
+
+Ligi E/F/G (młodzieżowe) są automatycznie pomijane we wszystkich sekcjach.
+
+Dokładne nazwy lig znajdziesz uruchamiając dry run (patrz niżej) — w logu pojawi się pełna lista lig z aktualnego XLS.
 
 ### 5. Zmień domenę nadawcy
 
@@ -72,9 +79,23 @@ W `src/scan.py` zmień:
 "from": "Obsada KPZPN <obsada@twoja-domena.pl>",
 ```
 
-### 6. Test ręczny
+### 6. Lokalnie (opcjonalnie)
 
-**Actions → Skanuj obsadę sędziowską → Run workflow**
+```bash
+pip install -r requirements-dev.txt
+cp .env.example .env   # uzupełnij kluczami
+python src/scan.py
+```
+
+Dry run (bez wysyłki emaila):
+
+```bash
+DRY_RUN=1 python src/scan.py
+```
+
+### 7. Test na GitHub Actions
+
+**Actions → dry run → Run workflow** — uruchamia skaner bez wysyłania emaili, pokazuje logi z listą lig i znalezionych meczów.
 
 ## Harmonogram
 
