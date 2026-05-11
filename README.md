@@ -1,5 +1,7 @@
 # Obsada Sędziowska KPZPN – Skaner XLSX
 
+[![Tests](https://github.com/masz00/obsada-sedziowska/actions/workflows/tests.yml/badge.svg)](https://github.com/masz00/obsada-sedziowska/actions/workflows/tests.yml)
+
 Automatyczny skaner obsady sędziowskiej KPZPN. Sprawdza w czwartki i piątki czy pojawił się nowy plik XLS z obsadą — jeśli tak, wysyła email z tabelą meczów, rolą i stawką netto.
 
 ## Jak działa
